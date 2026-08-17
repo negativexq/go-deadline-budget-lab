@@ -14,7 +14,12 @@ import (
 func withFakeDeadline(t *testing.T, remaining time.Duration) context.Context {
 	t.Helper()
 
-	fakeNow := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	// Base the fake clock on the real wall clock (not an arbitrary fixed
+	// date) so context's own internal timer — which always fires against
+	// real time, regardless of what our package clock is set to — agrees
+	// with the budget math instead of treating the deadline as already
+	// expired.
+	fakeNow := time.Now()
 	deadline := fakeNow.Add(remaining)
 
 	orig := now

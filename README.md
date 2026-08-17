@@ -202,9 +202,14 @@ go run ./cmd/demo -budget=900ms -upstream-delay=800ms
 - Budget math is verified across multiple simulated hops off one deadline,
   using an injectable clock (`internal/budget`'s test-only `now` override)
   so the assertions are deterministic instead of depending on real sleeps.
-- `client.GetWithRetry` checks `CanAfford` *before* sleeping into a backoff
+- `client.GetWithRetry` retries transport errors and 429/5xx responses (a
+  5xx is a successful round trip as far as `net/http` is concerned — `err`
+  is `nil` — so the status code has to be checked explicitly; a 4xx is
+  never retried). It checks `CanAfford` *before* sleeping into a backoff
   delay — if the remaining budget can't cover the next attempt, it returns
-  `ErrBudgetExhausted` instead of sleeping into a doomed retry.
+  `ErrBudgetExhausted` instead of sleeping into a doomed retry. Every
+  discarded intermediate response has its body closed so retries don't
+  leak connections.
 
 ## Engineering notes
 

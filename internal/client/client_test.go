@@ -3,6 +3,7 @@ package client_test
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -98,5 +99,58 @@ func TestGetWithRetry_StopsWhenBudgetInsufficient(t *testing.T) {
 	}
 	if elapsed >= 400*time.Millisecond {
 		t.Fatalf("elapsed = %v, retry should have been skipped instead of sleeping 400ms", elapsed)
+	}
+}
+
+// A 503 is a successful HTTP round trip as far as net/http is concerned
+// (err == nil), so GetWithRetry must inspect the status code itself to
+// know a retry is warranted.
+func TestGetWithRetry_RetriesOn5xx(t *testing.T) {
+	srv := fixture.NewServer()
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	c := &client.Client{Reserve: 10 * time.Millisecond}
+	delays := []time.Duration{10 * time.Millisecond, 10 * time.Millisecond}
+
+	resp, err := c.GetWithRetry(ctx, srv.URL+"/flaky?fails=2&status=503", 200*time.Millisecond, delays)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if got := srv.Count("/flaky"); got != 3 {
+		t.Fatalf("request count = %d, want 3 (1 initial + 2 retries)", got)
+	}
+}
+
+// A 404 is not retryable: retrying it can't turn it into success, so
+// GetWithRetry must return it immediately without spending any retries.
+func TestGetWithRetry_DoesNotRetryOn4xx(t *testing.T) {
+	srv := fixture.NewServer()
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	c := &client.Client{Reserve: 10 * time.Millisecond}
+	delays := []time.Duration{10 * time.Millisecond}
+
+	resp, err := c.GetWithRetry(ctx, srv.URL+"/flaky?fails=5&status=404", 200*time.Millisecond, delays)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+	if got := srv.Count("/flaky"); got != 1 {
+		t.Fatalf("request count = %d, want 1 (no retries on a 4xx)", got)
 	}
 }
