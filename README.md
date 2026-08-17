@@ -135,6 +135,12 @@ child budget = 450ms max
   the operation. It fails fast, before any network call.
 - `context.DeadlineExceeded` — the operation was attempted and started, but
   ran out of time while in flight.
+- `budget.ErrInvalidBudgetConfig` — the caller's own inputs don't make
+  sense (a non-positive `maxTimeout`/`operationTimeout`, or a negative
+  `reserve`). A negative reserve in particular would let a child be
+  allocated more time than the parent actually has left — the parent
+  context still hard-caps how long the child can run, but the budgeting
+  math itself would be wrong.
 
 The distinction matters: the first means "don't bother," the second means
 "we tried and ran out of time."

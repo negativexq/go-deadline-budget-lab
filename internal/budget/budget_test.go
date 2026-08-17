@@ -133,6 +133,40 @@ func TestRemaining_NoDeadline(t *testing.T) {
 	}
 }
 
+func TestChildTimeout_RejectsNonPositiveMaxTimeout(t *testing.T) {
+	ctx := withFakeDeadline(t, 5*time.Second)
+
+	for _, maxTimeout := range []time.Duration{0, -100 * time.Millisecond} {
+		_, err := ChildTimeout(ctx, maxTimeout, 50*time.Millisecond)
+		if !errors.Is(err, ErrInvalidBudgetConfig) {
+			t.Fatalf("ChildTimeout(maxTimeout=%v) err = %v, want ErrInvalidBudgetConfig", maxTimeout, err)
+		}
+	}
+}
+
+func TestChildTimeout_RejectsNegativeReserve(t *testing.T) {
+	ctx := withFakeDeadline(t, 5*time.Second)
+
+	_, err := ChildTimeout(ctx, 500*time.Millisecond, -1*time.Millisecond)
+	if !errors.Is(err, ErrInvalidBudgetConfig) {
+		t.Fatalf("err = %v, want ErrInvalidBudgetConfig", err)
+	}
+}
+
+func TestCanAfford_InvalidInputsReturnFalse(t *testing.T) {
+	ctx := withFakeDeadline(t, 5*time.Second)
+
+	if CanAfford(ctx, 0, 10*time.Millisecond) {
+		t.Fatal("CanAfford() = true, want false for a non-positive operationTimeout")
+	}
+	if CanAfford(ctx, -50*time.Millisecond, 10*time.Millisecond) {
+		t.Fatal("CanAfford() = true, want false for a negative operationTimeout")
+	}
+	if CanAfford(ctx, 100*time.Millisecond, -1*time.Millisecond) {
+		t.Fatal("CanAfford() = true, want false for a negative reserve")
+	}
+}
+
 func TestChildTimeout_NoDeadlineReturnsMax(t *testing.T) {
 	got, err := ChildTimeout(context.Background(), 500*time.Millisecond, 50*time.Millisecond)
 	if err != nil {
